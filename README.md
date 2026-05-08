@@ -155,4 +155,34 @@ You **don't need** to manually set up Google Cloud credentials. The bot uses Goo
 
 ---
 
-## 🗂 Project Structure
+## 🔐 Security Notes
+
+- **`.env` file is never committed** to GitHub — credentials are entered at runtime.
+- **Only whitelisted users** can interact with the bot (controlled by `AUTHORIZED_USERS`).
+- Google Drive uses **OAuth 2.0** — tokens are stored only in your Colab session.
+- Session data is stored **in-memory** — no persistent files on disk.
+
+---
+
+## ⚠️ Limitations (Free Colab)
+
+- Google Colab free tier disconnects after **~90 minutes of inactivity**.
+- For 24/7 operation, deploy the bot on a **VPS** (DigitalOcean, Hetzner, etc.).
+- Maximum file size for Telegram bots: **50 MB** (regular), **2 GB** (channels).
+- Google Drive storage depends on your account's quota.
+
+---
+
+## 📄 License
+
+This project is licensed under the **MIT License** — feel free to use, modify, and share.
+
+---
+
+## 🙏 Acknowledgements
+
+- [Pyrogram](https://docs.pyrogram.org/) — elegant Telegram MTProto framework
+- [yt-dlp](https://github.com/yt-dlp/yt-dlp) — powerful YouTube downloader
+- [Google Colab](https://colab.research.google.com/) — free cloud execution environment
+
+---
