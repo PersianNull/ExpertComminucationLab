@@ -1,5 +1,5 @@
 # 🤖 Telegram ↔ Google Drive Bot with YouTube Downloader
-
+[📖 Persian Version (نسخه فارسی)](README_FA.md)
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/PersianNull/ExpertComminucationLab/blob/main/telegram_bot_colab.ipynb)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
