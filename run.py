@@ -9,7 +9,8 @@ from config import (
 )
 from google_drive import (
     authenticate_google_drive, get_or_create_folder,
-    upload_file_from_memory, download_file, list_files_in_folder, check_new_files_in_sent
+    upload_file_from_memory, download_file, list_files_in_folder, check_new_files_in_sent,
+    get_file_metadata   # 👈 این تابع اضافه شده است
 )
 from youtube_dl import get_video_info, download_video, download_audio
 from pyrogram import Client, filters
@@ -51,7 +52,6 @@ def quality_keyboard(formats):
     return InlineKeyboardMarkup(buttons)
 
 def compress_file(file_path: str, output_dir: str) -> str:
-    """فایل را زیپ کرده و مسیر فایل زیپ‌شده را برمی‌گرداند."""
     base = os.path.basename(file_path)
     zip_name = os.path.splitext(base)[0] + ".zip"
     zip_path = os.path.join(output_dir, zip_name)
@@ -144,20 +144,31 @@ async def unified_callback(client, callback_query: CallbackQuery):
 
     data = callback_query.data
 
+
     if data.startswith("send_file|"):
         file_id = data.split("|")[1]
         try:
             status = await callback_query.message.reply("⬇️ در حال آماده‌سازی فایل...")
+   
+            meta = get_file_metadata(drive_service, file_id)
+            original_name = meta.get('name', 'file')
+
             with tempfile.NamedTemporaryFile(delete=False) as tmp:
                 download_file(drive_service, file_id, tmp.name)
                 file_path = tmp.name
-            await callback_query.message.reply_document(document=file_path)
+
+      
+            await callback_query.message.reply_document(
+                document=file_path,
+                file_name=original_name
+            )
             os.unlink(file_path)
             await status.delete()
         except Exception as e:
             await callback_query.message.reply(f"❌ خطا در ارسال فایل: {e}")
         await callback_query.answer()
         return
+
 
     if data in ("compress_yes", "compress_no"):
         pending = pending_compression.pop(user_id, None)
@@ -192,23 +203,21 @@ async def unified_callback(client, callback_query: CallbackQuery):
         except Exception as e:
             await callback_query.message.edit_text(f"❌ خطا در آپلود: {e}")
         finally:
-
             if tmpdir and os.path.isdir(tmpdir):
                 shutil.rmtree(tmpdir, ignore_errors=True)
             else:
-
                 if os.path.exists(file_path):
                     os.unlink(file_path)
             await callback_query.answer()
         return
 
-
+  
     if data == "yt_cancel":
         await callback_query.message.delete()
         await callback_query.answer("عملیات لغو شد.")
         return
 
-
+ 
     if data.startswith("yt_dl|") or data == "yt_audio":
         url = user_last_url.get(user_id)
         if not url:
@@ -218,7 +227,6 @@ async def unified_callback(client, callback_query: CallbackQuery):
         await callback_query.answer()
         status_msg = await callback_query.message.reply("⬇️ در حال دانلود از یوتیوب...")
         try:
-
             tmpdir = tempfile.mkdtemp()
             if data == "yt_audio":
                 file_path = download_audio(url, output_dir=tmpdir)
@@ -249,9 +257,7 @@ async def unified_callback(client, callback_query: CallbackQuery):
             await status_msg.edit_text(f"❌ خطا: {e}")
         return
 
-
     await callback_query.answer("انتخاب نامعتبر.", show_alert=True)
-
 
 async def monitor_sent():
     while True:
@@ -266,11 +272,10 @@ async def monitor_sent():
             print(f"خطا در مانیتورینگ Sent: {e}")
         await asyncio.sleep(SENT_POLL_INTERVAL)
 
-
 async def runner():
     print("🚀 شروع بات...")
     await app.start()
-    print("✅ بات فعال شد! (قابلیت فشرده‌سازی هوشمند)")
+    print("✅ بات فعال شد! (نسخه اصلاح‌شده)")
     asyncio.create_task(monitor_sent())
     await pyrogram.idle()
     await app.stop()
