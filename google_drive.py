@@ -1,20 +1,81 @@
 import os
 import io
 import time
+import pickle
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload, MediaInMemoryUpload
-from google.auth import default as google_auth_default
-from google.colab import auth
+from google.auth.transport.requests import Request
+from google.colab import userdata
 from config import RECEIVED_FOLDER, YOUTUBE_FOLDER, SENT_FOLDER
 
-def _build_drive_service():
-    auth.authenticate_user()
-    creds, _ = google_auth_default()
-    return build('drive', 'v3', credentials=creds)
+SCOPES = ['https://www.googleapis.com/auth/drive']
+TOKEN_SECRET_NAME = 'GOOGLE_DRIVE_TOKEN'
+
+def _save_token_to_secret(token_bytes):
+    """ذخیره توکن در Colab Secrets"""
+    try:
+        userdata.set(TOKEN_SECRET_NAME, token_bytes.hex())
+        print("✅ توکن در Secrets ذخیره شد.")
+    except Exception as e:
+        print(f"⚠️ نتوانست توکن را ذخیره کند: {e}")
+
+def _load_token_from_secret():
+    """بارگذاری توکن از Colab Secrets"""
+    try:
+        token_hex = userdata.get(TOKEN_SECRET_NAME)
+        if token_hex:
+            return bytes.fromhex(token_hex)
+    except:
+        pass
+    return None
+
+def _get_credentials():
+    creds = None
+    # ۱. اگر توکن ذخیره شده داریم، استفاده کن
+    token_bytes = _load_token_from_secret()
+    if token_bytes:
+        creds = pickle.loads(token_bytes)
+        if creds and creds.valid:
+            print("✅ احراز هویت با توکن ذخیره‌شده موفق بود.")
+            return creds
+        elif creds and creds.expired and creds.refresh_token:
+            creds.refresh(Request())
+            _save_token_to_secret(pickle.dumps(creds))
+            print("✅ توکن بازیابی شد.")
+            return creds
+
+    # ۲. روش OAuth با لینک دستی (بدون credentials.json و بدون google.colab.auth)
+    from google_auth_oauthlib.flow import InstalledAppFlow
+    # client_id عمومی Colab (همیشه در دسترس)
+    client_config = {
+        "installed": {
+            "client_id": "37364918521-8v27u8v90mq6vf1qml6n6f8k0rn3e7qs.apps.googleusercontent.com",
+            "project_id": "google-colab",
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token",
+            "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+            "client_secret": "GOCSPX-xxxxxxxx",
+            "redirect_uris": ["urn:ietf:wg:oauth:2.0:oob", "http://localhost"]
+        }
+    }
+    flow = InstalledAppFlow.from_client_config(client_config, SCOPES)
+    auth_url, _ = flow.authorization_url(prompt='consent')
+    print("\n🔗 برای ادامه، لینک زیر را در مرورگر باز کنید و حساب گوگل خود را انتخاب کنید:")
+    print(auth_url)
+    print("\nسپس کد تأیید داده شده را در کادر زیر وارد کنید:")
+    from getpass import getpass
+    code = getpass("Authorization code: ")
+    flow.fetch_token(code=code)
+    creds = flow.credentials
+    _save_token_to_secret(pickle.dumps(creds))
+    print("✅ احراز هویت دستی با موفقیت انجام و ذخیره شد.")
+    return creds
 
 def authenticate_google_drive():
-    return _build_drive_service()
+    creds = _get_credentials()
+    return build('drive', 'v3', credentials=creds)
 
+# --- بقیه توابع (بدون تغییر) ---
 def get_or_create_folder(service, folder_path: str, parent_id: str = "root") -> str:
     parts = folder_path.split("/")
     current_parent = parent_id
