@@ -49,7 +49,11 @@ def _get_credentials():
             "سپس این سلول را دوباره اجرا کنید."
         )
 
-    flow = InstalledAppFlow.from_client_secrets_file('credentials.json', SCOPES)
+    flow = InstalledAppFlow.from_client_secrets_file(
+    'credentials.json',
+    SCOPES,
+    redirect_uri='urn:ietf:wg:oauth:2.0:oob'
+)
     auth_url, _ = flow.authorization_url(prompt='consent')
     print("\n🔗 برای ادامه، لینک زیر را در مرورگر باز کنید و حساب گوگل خود را انتخاب کنید:")
     print(auth_url)
