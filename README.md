@@ -13,14 +13,19 @@ A powerful, production-ready Telegram bot that acts as your personal bridge betw
 ### 📂 Telegram → Google Drive (File Upload)
 - Send any **document, video, audio, or photo** to the bot
 - Files are automatically uploaded to the **`Received`** folder in your Google Drive
-- **Optional ZIP compression** before upload — save space and bandwidth
+- **Optional ZIP compression** before saving — save space and bandwidth
+- After compression choice, you can **choose delivery method**:
+  - **Google Drive** – save the file to your cloud storage
+  - **Direct in chat** – receive the file immediately inside the Telegram bot
 
 ### 🎬 YouTube → Google Drive (Video Download)
 - Send any **YouTube link** to the bot
 - Choose from **all available qualities** (144p up to 4K)
 - Option to extract **audio only (MP3)**
 - **Optional ZIP compression** after download
-- Videos are saved in the **`YouTube`** folder in your Google Drive
+- After compression choice, you can **choose delivery method**:
+  - **Google Drive** – save the file in the **`YouTube`** folder
+  - **Direct in chat** – receive the video/audio file instantly in Telegram
 
 ### 📤 Google Drive → Telegram (File Retrieval)
 - Place any file in the **`Sent`** folder of your Google Drive
