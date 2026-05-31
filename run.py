@@ -9,15 +9,15 @@ from config import (
 )
 from google_drive import (
     authenticate_google_drive, get_or_create_folder,
-    upload_file_from_memory, download_file, list_files_in_folder, check_new_files_in_sent,
-    get_file_metadata   # 👈 این تابع اضافه شده است
+    upload_file_from_memory, download_file, list_files_in_folder,
+    check_new_files_in_sent, get_file_metadata
 )
 from youtube_dl import get_video_info, download_video, download_audio
 from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 import tempfile
 import zipfile
-import shutil  
+import shutil
 
 print("🔐 احراز هویت گوگل درایو...")
 drive_service = authenticate_google_drive()
@@ -32,7 +32,7 @@ app = Client(
 )
 
 user_last_url = {}
-pending_compression = {}  
+pending_compression = {}  # keeps file info + compression choice + delivery state
 
 def authorized_only(func):
     async def wrapper(client, message):
@@ -64,8 +64,8 @@ def compress_file(file_path: str, output_dir: str) -> str:
 async def start_command(client, message):
     await message.reply(
         "👋 سلام! من بات مدیریت فایل و یوتیوب هستم.\n\n"
-        "✅ فایل ارسال کنی → امکان فشرده‌سازی و ذخیره در Google Drive\n"
-        "🔗 لینک یوتیوب بفرستی → انتخاب کیفیت + امکان فشرده‌سازی\n"
+        "✅ فایل ارسال کنی → امکان فشرده‌سازی و ذخیره در Google Drive یا دریافت مستقیم\n"
+        "🔗 لینک یوتیوب بفرستی → انتخاب کیفیت + فشرده‌سازی + روش دریافت\n"
         "📂 دستور /sent → دریافت فایل‌های موجود در پوشه Sent\n\n"
         "⚠️ فقط کاربر مجاز می‌تواند از بات استفاده کند."
     )
@@ -84,8 +84,9 @@ async def receive_file(client, message):
             'file_path': temp_path,
             'file_name': file_name,
             'parent_id': received_id,
-            'tmpdir': None,          
-            'is_youtube': False
+            'tmpdir': None,
+            'is_youtube': False,
+            'compress_choice': None   # will be set later
         }
 
         buttons = InlineKeyboardMarkup([
@@ -93,7 +94,7 @@ async def receive_file(client, message):
             [InlineKeyboardButton("📂 بدون فشرده‌سازی", callback_data="compress_no")]
         ])
         await status_msg.edit_text(
-            f"📥 فایل **{file_name}** دریافت شد.\nآیا می‌خواهید قبل از آپلود فشرده شود؟",
+            f"📥 فایل **{file_name}** دریافت شد.\nآیا می‌خواهید فشرده شود؟",
             reply_markup=buttons
         )
     except Exception as e:
@@ -137,19 +138,17 @@ async def sent_files(client, message):
 @app.on_callback_query()
 async def unified_callback(client, callback_query: CallbackQuery):
     user_id = callback_query.from_user.id
+    data = callback_query.data
 
     if user_id not in AUTHORIZED_USERS:
         await callback_query.answer("⛔ شما مجاز به استفاده از این بات نیستید.", show_alert=True)
         return
 
-    data = callback_query.data
-
-
+    # ===== ارسال فایل از Sent =====
     if data.startswith("send_file|"):
         file_id = data.split("|")[1]
         try:
             status = await callback_query.message.reply("⬇️ در حال آماده‌سازی فایل...")
-   
             meta = get_file_metadata(drive_service, file_id)
             original_name = meta.get('name', 'file')
 
@@ -157,7 +156,6 @@ async def unified_callback(client, callback_query: CallbackQuery):
                 download_file(drive_service, file_id, tmp.name)
                 file_path = tmp.name
 
-      
             await callback_query.message.reply_document(
                 document=file_path,
                 file_name=original_name
@@ -169,55 +167,13 @@ async def unified_callback(client, callback_query: CallbackQuery):
         await callback_query.answer()
         return
 
-
-    if data in ("compress_yes", "compress_no"):
-        pending = pending_compression.pop(user_id, None)
-        if not pending:
-            await callback_query.answer("⛔ اطلاعات فایل منقضی شده است.", show_alert=True)
-            return
-
-        file_path = pending['file_path']
-        file_name = pending['file_name']
-        parent_id = pending['parent_id']
-        tmpdir = pending.get('tmpdir')
-        is_youtube = pending.get('is_youtube', False)
-
-        await callback_query.message.edit_reply_markup(None)
-
-        try:
-            if data == "compress_yes":
-                await callback_query.message.edit_text("🗜 در حال فشرده‌سازی...")
-                work_dir = tmpdir if (tmpdir and os.path.isdir(tmpdir)) else os.path.dirname(file_path)
-                zip_path = compress_file(file_path, work_dir)
-                with open(zip_path, "rb") as f:
-                    file_bytes = f.read()
-                os.unlink(zip_path)
-                upload_file_from_memory(drive_service, file_bytes, os.path.basename(zip_path), parent_id)
-                await callback_query.message.edit_text(f"✅ فایل فشرده‌شده در Google Drive ذخیره شد.")
-            else:
-                await callback_query.message.edit_text("☁️ در حال آپلود به گوگل درایو...")
-                with open(file_path, "rb") as f:
-                    file_bytes = f.read()
-                upload_file_from_memory(drive_service, file_bytes, file_name, parent_id)
-                await callback_query.message.edit_text(f"✅ فایل '{file_name}' در Google Drive ذخیره شد.")
-        except Exception as e:
-            await callback_query.message.edit_text(f"❌ خطا در آپلود: {e}")
-        finally:
-            if tmpdir and os.path.isdir(tmpdir):
-                shutil.rmtree(tmpdir, ignore_errors=True)
-            else:
-                if os.path.exists(file_path):
-                    os.unlink(file_path)
-            await callback_query.answer()
-        return
-
-  
+    # ===== لغو عملیات یوتیوب =====
     if data == "yt_cancel":
         await callback_query.message.delete()
         await callback_query.answer("عملیات لغو شد.")
         return
 
- 
+    # ===== انتخاب کیفیت/صوت یوتیوب =====
     if data.startswith("yt_dl|") or data == "yt_audio":
         url = user_last_url.get(user_id)
         if not url:
@@ -242,7 +198,8 @@ async def unified_callback(client, callback_query: CallbackQuery):
                 'file_name': file_name,
                 'parent_id': youtube_id,
                 'tmpdir': tmpdir,
-                'is_youtube': True
+                'is_youtube': True,
+                'compress_choice': None
             }
 
             buttons = InlineKeyboardMarkup([
@@ -250,11 +207,105 @@ async def unified_callback(client, callback_query: CallbackQuery):
                 [InlineKeyboardButton("📂 بدون فشرده‌سازی", callback_data="compress_no")]
             ])
             await status_msg.edit_text(
-                f"📥 **{file_name}** دانلود شد.\nآیا قبل از آپلود فشرده شود؟",
+                f"📥 **{file_name}** دانلود شد.\nآیا قبل از ارسال فشرده شود؟",
                 reply_markup=buttons
             )
         except Exception as e:
             await status_msg.edit_text(f"❌ خطا: {e}")
+        return
+
+    # ===== انتخاب فشرده‌سازی (بله/خیر) =====
+    if data in ("compress_yes", "compress_no"):
+        pending = pending_compression.get(user_id)
+        if not pending:
+            await callback_query.answer("⛔ اطلاعات فایل منقضی شده است.", show_alert=True)
+            return
+
+        # ذخیره انتخاب فشرده‌سازی
+        pending['compress_choice'] = (data == "compress_yes")
+
+        # حذف کیبورد قبلی و نمایش سوال نحوه دریافت
+        await callback_query.message.edit_reply_markup(None)
+        compress_text = "✅ فشرده‌سازی فعال" if pending['compress_choice'] else "❌ بدون فشرده‌سازی"
+        await callback_query.message.edit_text(
+            f"🗜 انتخاب: {compress_text}\n\n"
+            "حالا نحوه دریافت فایل را انتخاب کنید:",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("📁 ذخیره در گوگل درایو", callback_data="deliver_drive")],
+                [InlineKeyboardButton("📨 دریافت مستقیم در بات", callback_data="deliver_direct")]
+            ])
+        )
+        await callback_query.answer()
+        return
+
+    # ===== انتخاب روش دریافت (درایو / مستقیم) =====
+    if data in ("deliver_drive", "deliver_direct"):
+        pending = pending_compression.pop(user_id, None)
+        if not pending:
+            await callback_query.answer("⛔ اطلاعات فایل منقضی شده است.", show_alert=True)
+            return
+
+        compress_choice = pending['compress_choice']
+        file_path = pending['file_path']
+        file_name = pending['file_name']
+        parent_id = pending['parent_id']
+        tmpdir = pending.get('tmpdir')
+        await callback_query.message.edit_reply_markup(None)
+
+        try:
+            if data == "deliver_drive":
+                # ذخیره در گوگل درایو
+                if compress_choice:
+                    await callback_query.message.edit_text("🗜 در حال فشرده‌سازی...")
+                    work_dir = tmpdir if (tmpdir and os.path.isdir(tmpdir)) else os.path.dirname(file_path)
+                    zip_path = compress_file(file_path, work_dir)
+                    with open(zip_path, "rb") as f:
+                        file_bytes = f.read()
+                    os.unlink(zip_path)
+                    upload_file_from_memory(drive_service, file_bytes, os.path.basename(zip_path), parent_id)
+                    await callback_query.message.edit_text("✅ فایل فشرده‌شده در Google Drive ذخیره شد.")
+                else:
+                    await callback_query.message.edit_text("☁️ در حال آپلود به گوگل درایو...")
+                    with open(file_path, "rb") as f:
+                        file_bytes = f.read()
+                    upload_file_from_memory(drive_service, file_bytes, file_name, parent_id)
+                    await callback_query.message.edit_text(f"✅ فایل '{file_name}' در Google Drive ذخیره شد.")
+
+            else:  # deliver_direct
+                # ارسال مستقیم فایل به کاربر
+                if compress_choice:
+                    await callback_query.message.edit_text("🗜 در حال فشرده‌سازی و ارسال...")
+                    work_dir = tmpdir if (tmpdir and os.path.isdir(tmpdir)) else os.path.dirname(file_path)
+                    zip_path = compress_file(file_path, work_dir)
+                    send_file_path = zip_path
+                    send_file_name = os.path.basename(zip_path)
+                else:
+                    await callback_query.message.edit_text("📨 در حال ارسال فایل...")
+                    send_file_path = file_path
+                    send_file_name = file_name
+
+                # ارسال فایل به کاربر
+                await callback_query.message.reply_document(
+                    document=send_file_path,
+                    file_name=send_file_name
+                )
+                await callback_query.message.edit_text("✅ فایل با موفقیت ارسال شد.")
+
+                # اگر فایل فشرده ایجاد شده بود، آن را پاک می‌کنیم
+                if compress_choice and os.path.exists(send_file_path) and send_file_path != file_path:
+                    os.unlink(send_file_path)
+
+        except Exception as e:
+            await callback_query.message.edit_text(f"❌ خطا: {e}")
+
+        finally:
+            # پاکسازی فایل‌های موقت
+            if tmpdir and os.path.isdir(tmpdir):
+                shutil.rmtree(tmpdir, ignore_errors=True)
+            else:
+                if os.path.exists(file_path):
+                    os.unlink(file_path)
+            await callback_query.answer()
         return
 
     await callback_query.answer("انتخاب نامعتبر.", show_alert=True)
@@ -275,7 +326,7 @@ async def monitor_sent():
 async def runner():
     print("🚀 شروع بات...")
     await app.start()
-    print("✅ بات فعال شد! (نسخه اصلاح‌شده)")
+    print("✅ بات فعال شد! (نسخه جدید با امکان دریافت مستقیم)")
     asyncio.create_task(monitor_sent())
     await pyrogram.idle()
     await app.stop()
